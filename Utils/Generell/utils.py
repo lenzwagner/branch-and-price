@@ -1,4 +1,5 @@
 import numpy as np
+from collections import defaultdict
 
 
 def boxed_print(*args, width=150, border='*', center=True):
@@ -61,7 +62,7 @@ def calc_appUsage(app_dict, los_dict, agg_to_patient):
 
     return add_ratio_dict, round(mean_ratio, 3)
 
-from collections import defaultdict
+
 
 
 def sum_over_p(dicts):
@@ -75,7 +76,6 @@ def sum_over_p(dicts):
 
 
 def calc_util(x_dict_full, Max_t_dict, D, c_g_j):
-    from collections import defaultdict
     max_t_focus = {key: value for key, value in Max_t_dict.items() if 0 < key[1] <= max(D)}
     result = defaultdict(float)
 

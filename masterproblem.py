@@ -180,8 +180,7 @@ class MasterProblem_d:
         most_frac_info = None
 
         # Check all lambda variables
-        #if self.verbose:
-            #print(f'Lambda items: {len(self.lmbda.items())} variables')
+
         for (n, a), var in self.lmbda.items():
             x_val = var.X
 
@@ -261,8 +260,7 @@ class MasterProblem_d:
                         if p in self.P_Join:
                             solution_key = (p, s)
                             active_keys.append(solution_key)
-                            #if v.Obj > 1e-2:
-                                #print(f'{v.VarName} = {v.X}, Obj-Coefficient: {round(v.Obj, 2)}')
+
 
         else:
             active_keys = [k for k, v in lambda_list_cg.items() if (v['value'] if isinstance(v, dict) else v) > 1e-6]

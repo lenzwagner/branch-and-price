@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+
+# Gurobi
+*.log
+gurobi.log
+*.lp
+*.mps
+*.rlp
+
+# Results / generated output
+results/cg/
+results/comp_study/aggr_stats*.xlsx
+results/crossover/crossover_*.xlsx
+*.pkl
+
+# Test / scratch files in root
+results_test.xlsx
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
