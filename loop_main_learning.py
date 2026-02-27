@@ -496,7 +496,7 @@ def main_loop():
     # ===========================
     
     # Find the newest Excel file in results/instances
-    instances_dir = 'results/instances'
+    instances_dir = 'results/crossover/instances'
     excel_files = glob.glob(os.path.join(instances_dir, '*.xlsx'))
     
     if not excel_files:

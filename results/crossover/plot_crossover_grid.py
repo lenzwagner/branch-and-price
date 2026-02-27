@@ -71,9 +71,12 @@ def plot_latest_crossover_grid():
     # Highlight interpretation areas
     ax.grid(True, linestyle="--", alpha=0.7)
     
-    # Save the plot alongside the pickle
+    # Save the plot
     base_name = os.path.splitext(newest_pkl)[0]
-    plot_path = f"{base_name}_grid_plot.png"
+    root_dir = os.path.join(script_dir, '..', '..')
+    plot_dir = os.path.join(root_dir, 'plots', 'results')
+    os.makedirs(plot_dir, exist_ok=True)
+    plot_path = os.path.join(plot_dir, f"{os.path.basename(base_name)}_grid_plot.png")
     plt.tight_layout()
     plt.savefig(plot_path, dpi=300)
     print(f"✓ Plot saved to: {plot_path}")

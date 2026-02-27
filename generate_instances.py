@@ -433,7 +433,7 @@ class InstanceGenerator:
             return
 
         # Create output directory
-        output_dir = 'results/instances'
+        output_dir = 'results/crossover/instances'
         os.makedirs(output_dir, exist_ok=True)
 
         # Generate filename if not provided

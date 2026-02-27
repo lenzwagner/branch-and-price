@@ -309,7 +309,7 @@ def main():
     """Main function to run significance tests."""
     # Path to data
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    data_path = os.path.join(script_dir, '..', 'parameter_study', 'results', 'results_main.xlsx')
+    data_path = os.path.join(script_dir, '..', 'parameter_study', 'results', 'results_los_study.xlsx')
     output_path = os.path.join(script_dir, 'significance_results.xlsx')
     
     # Check if file exists

@@ -399,11 +399,12 @@ class SeedComparison:
 
             # Save results to CSV
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            results_dir = 'results/comparison'
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            results_dir = os.path.join(script_dir, '..', 'plots', 'results')
             os.makedirs(results_dir, exist_ok=True)
 
             method_name = 'bnp' if self.use_branch_and_price else 'cg'
-            filename = f'{results_dir}/comparison_{method_name}_{timestamp}.csv'
+            filename = os.path.join(results_dir, f'comparison_{method_name}_{timestamp}.csv')
             df.to_csv(filename, index=False)
             print(f"\nResults saved to: {filename}")
 

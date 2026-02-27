@@ -387,7 +387,7 @@ def main(allow_gaps=False, use_warmstart=True, dual_smoothing_alpha=None):
 
             # Export to CSV
             if verbose_output:
-                bnp_solver.export_schedules_to_csv('results/optimal_schedules.csv')
+                bnp_solver.export_schedules_to_csv('plots/results/optimal_schedules.csv')
 
             if verbose_output:
                 print("\n" + "=" * 100)
@@ -414,7 +414,7 @@ def main(allow_gaps=False, use_warmstart=True, dual_smoothing_alpha=None):
             # Academic/Thesis style visualization (publication-ready)
             bnp_solver.visualize_tree(
                 academic=True,
-                save_path='Pictures/Tree/tree_academic.png',
+                save_path='plots/results/tree_academic.png',
                 dpi=600  # High resolution for papers
             )
 
