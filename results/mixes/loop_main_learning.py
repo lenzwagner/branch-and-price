@@ -163,7 +163,7 @@ def solve_instance(seed, D_focus, pttr='medium', T=2, allow_gaps=False, use_warm
     
     # Solve with 20-minute timeout per instance
     # If timeout occurs, solver returns current incumbent and best LP bound
-    results = bnp_solver.solve(time_limit=1200, max_nodes=300)  # 1200s = 20 minutes
+    results = bnp_solver.solve(time_limit=2400, max_nodes=300)  # 1200s = 20 minutes
 
     # ===========================
     # DERIVED VARIABLES COMPUTATION

@@ -155,6 +155,8 @@ def aggregate_scenarios(df, d_focus=28):
         """
         Recursively find tuples containing day integers and increment the count.
         Handles both flat {(p, t, d): 1} and nested {t: {(p, d): 1}} structures.
+        For x-columns (Human): counts entries with value > 0.
+        For y-columns (AI, focus_y/post_y): counts entries with value > 0.
         """
         daily_counts = {day: 0 for day in target_days}
         if not isinstance(d, dict):
@@ -179,14 +181,38 @@ def aggregate_scenarios(df, d_focus=28):
                     pass
         return daily_counts
 
+    def extract_pre_y_days(d, target_days):
+        """
+        Special extractor for pre_y format: {(patient_id, day): 0_or_1}
+        where 0 = Human (therapist) session, 1 = AI session.
+        Returns two dicts: human_counts and ai_counts.
+        """
+        human_counts = {day: 0 for day in target_days}
+        ai_counts = {day: 0 for day in target_days}
+        if not isinstance(d, dict):
+            return human_counts, ai_counts
+        for k, v in d.items():
+            try:
+                key_tuple = ast.literal_eval(k) if isinstance(k, str) else k
+                if isinstance(key_tuple, (tuple, list)) and len(key_tuple) == 2:
+                    day = int(key_tuple[1])
+                    if day in target_days:
+                        if v == 0:
+                            human_counts[day] += 1
+                        elif v == 1:
+                            ai_counts[day] += 1
+            except:
+                pass
+        return human_counts, ai_counts
+
     for idx, row in df.iterrows():
         human_daily = {day: 0 for day in days}
         ai_daily = {day: 0 for day in days}
         
-        # We need to collect from: pre_x, focus_x, post_x (Human) and focus_y (AI)
-        # Note: 'pre_y' and 'post_y' don't exist in the data schema, AI sessions there are counted through focus_session_dict if at all.
+        # Collect from: pre_x, focus_x, post_x (Human) and focus_y, post_y (AI only entries)
+        # pre_y is special: value 0=Human, 1=AI -> needs its own extractor
         x_cols = ['pre_x', 'focus_x', 'post_x']
-        y_cols = ['focus_y']
+        y_cols = ['focus_y', 'post_y']
         
         # Process X assignments (Human)
         for col in x_cols:
@@ -195,8 +221,16 @@ def aggregate_scenarios(df, d_focus=28):
                 counts = extract_days_from_dict(x_dict, days, 'X')
                 for day in days:
                     human_daily[day] += counts[day]
-                        
-        # Process Y assignments (AI)
+
+        # Process pre_y: format {(patient, day): 0=Human / 1=AI}
+        if 'pre_y' in row:
+            pre_y_dict = parse_dict_col(row['pre_y'])
+            h_counts, a_counts = extract_pre_y_days(pre_y_dict, days)
+            for day in days:
+                human_daily[day] += h_counts[day]
+                ai_daily[day] += a_counts[day]
+
+        # Process Y assignments (AI only: focus_y, post_y)
         for col in y_cols:
             if col in row:
                 y_dict = parse_dict_col(row[col])

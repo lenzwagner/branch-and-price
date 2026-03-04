@@ -534,6 +534,13 @@ def generate_patient_data_log(T=10, D_focus=30, W_on=5, W_off=2, daily=4, pttr_s
         }
     }
 
+    # Save original percentages BEFORE overwriting (needed for normalization later)
+    original_pct = {
+        'E65A': drg_data['E65A']['percentage'],
+        'E65B': drg_data['E65B']['percentage'],
+        'E65C': drg_data['E65C']['percentage'],
+    }
+
     if severity_mix is not None:
         if len(severity_mix) != 3:
             raise ValueError("severity_mix must be a tuple of 3 percentages (E65A%, E65B%, E65C%)")
@@ -669,11 +676,11 @@ def generate_patient_data_log(T=10, D_focus=30, W_on=5, W_off=2, daily=4, pttr_s
         if abs(total_pct - 1.0) > 0.01:
             raise ValueError(f"severity_mix percentages must sum to 1.0, got {total_pct}")
         
-        # Calculate baseline average LOS (using default distribution)
+        # Calculate baseline average LOS (using ORIGINAL default distribution, not the overwritten mix)
         baseline_avg_los = (
-            drg_data['E65A']['percentage'] / 100 * drg_data['E65A']['los_mean'] +
-            drg_data['E65B']['percentage'] / 100 * drg_data['E65B']['los_mean'] +
-            drg_data['E65C']['percentage'] / 100 * drg_data['E65C']['los_mean']
+            original_pct['E65A'] / 100 * drg_data['E65A']['los_mean'] +
+            original_pct['E65B'] / 100 * drg_data['E65B']['los_mean'] +
+            original_pct['E65C'] / 100 * drg_data['E65C']['los_mean']
         )
         
         # Calculate expected average LOS for this severity mix
