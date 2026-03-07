@@ -579,7 +579,16 @@ def main_loop():
         if 'severity_mix' in row and pd.notna(row['severity_mix']):
             # Parse severity_mix from string format "(0.7, 0.2, 0.1)" to tuple
             import ast
-            severity_mix = ast.literal_eval(row['severity_mix'])
+            severity_mix = ast.literal_eval(str(row['severity_mix']))
+        
+        # Fallback: derive from severity_mix_name if tuple column is missing/None
+        if severity_mix is None and 'severity_mix_name' in row and pd.notna(row.get('severity_mix_name')):
+            name_to_mix = {
+                'neuro':    (0.70, 0.20, 0.10),
+                'biasfree': (1/3,  1/3,  1/3),
+                'baseline': None,
+            }
+            severity_mix = name_to_mix.get(str(row['severity_mix_name']), None)
         
         # Read config label from Excel (e.g. 'baseline', 'neuro', 'ortho')
         config_label = row.get('config', None)

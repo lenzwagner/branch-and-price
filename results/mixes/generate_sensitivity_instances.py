@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 Generate instances for Patient Mix Sensitivity Study
-
 This script creates instances for three severity mix configurations:
 - Baseline: Default DRG distribution (4.8%, 27.8%, 67.4%)
 - Φ_Neuro: High-Complexity mix (70%, 20%, 10%)

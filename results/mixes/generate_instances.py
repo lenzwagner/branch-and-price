@@ -498,6 +498,7 @@ class InstanceGenerator:
                 'D_focus_count': inst_data['D_focus_count'],
                 'config': inst_data.get('config', 'baseline'),  # 'baseline', 'neuro', or 'ortho'
                 'severity_mix_name': inst_data.get('severity_mix_name'),
+                'severity_mix': inst_data.get('severity_mix'),  # Tuple as string, e.g. '(0.7, 0.2, 0.1)'
 
                 # ===== Learning Parameters =====
                 'learn_type': inst_data['learn_type'],
