@@ -28,6 +28,14 @@ D_FOCUS = 28  # Planning horizon
 COLOR_HUMAN = "#FFC20A"  # Yellow/Orange for Human (HOM Baseline)
 COLOR_AI = "#0C7BDC"     # Blue for AI (HBM AI-Hybrid)
 
+# Period-split colors (light → main → dark for Pre / Focus / Post)
+COLOR_PRE_HUMAN   = "#FFE8A0"   # light yellow  – Pre  / Human
+COLOR_FOCUS_HUMAN = "#FFC20A"   # yellow        – Focus / Human
+COLOR_POST_HUMAN  = "#A07800"   # dark gold     – Post  / Human
+COLOR_PRE_AI      = "#99CCFF"   # light blue    – Pre  / AI
+COLOR_FOCUS_AI    = "#0C7BDC"   # blue          – Focus / AI
+COLOR_POST_AI     = "#084A86"   # dark blue     – Post  / AI
+
 def parse_session_dict(session_dict_str):
     """Parse the session dictionary string to Python dict."""
     try:
@@ -125,22 +133,22 @@ def count_sessions_per_day(session_dict, d_focus=28):
 def aggregate_scenarios(df, d_focus=28):
     """
     Aggregate session counts across all scenarios (seeds) for days 1-28.
-    Combines pre-period data (for days >= 1) with focus-period data.
+    Returns 6 daily time-series split by period (pre / focus / post) and
+    session type (Human / AI).
 
     Returns:
-        days: array of days 1-28
-        human_mean: mean human sessions per day
-        human_std: std deviation of human sessions
-        ai_mean: mean AI sessions per day
-        ai_std: std deviation of AI sessions
+        days             : list of ints 1..d_focus
+        period_means     : dict with keys 'pre_human', 'focus_human', 'post_human',
+                           'pre_ai', 'focus_ai', 'post_ai'  →  np.array shape (d_focus,)
+        period_stds      : same structure, standard deviations
+        # legacy flat arrays (kept for backwards compatibility)
+        human_mean, human_std, ai_mean, ai_std
+        all_human_sessions, all_ai_sessions
     """
     days = list(range(1, d_focus + 1))
-    
-    all_human_sessions = []
-    all_ai_sessions = []
-    
+
     import ast
-    
+
     def parse_dict_col(val):
         if pd.isna(val) or val == '':
             return {}
@@ -150,30 +158,21 @@ def aggregate_scenarios(df, d_focus=28):
             return ast.literal_eval(str(val))
         except:
             return {}
-            
-    def extract_days_from_dict(d, target_days, type_col='X'):
-        """
-        Recursively find tuples containing day integers and increment the count.
-        Handles both flat {(p, t, d): 1} and nested {t: {(p, d): 1}} structures.
-        For x-columns (Human): counts entries with value > 0.
-        For y-columns (AI, focus_y/post_y): counts entries with value > 0.
-        """
+
+    def extract_days_from_dict(d, target_days):
+        """Return {day: count} for all keys whose last tuple element is a day."""
         daily_counts = {day: 0 for day in target_days}
         if not isinstance(d, dict):
             return daily_counts
-            
         for k, v in d.items():
             if isinstance(v, dict):
-                # Nested structure like {therapist: {(patient, day): 1}}
-                nested_counts = extract_days_from_dict(v, target_days, type_col)
+                nested = extract_days_from_dict(v, target_days)
                 for day in target_days:
-                    daily_counts[day] += nested_counts[day]
+                    daily_counts[day] += nested[day]
             else:
-                # Base structure like {(patient, day): 1} or {(patient, therapist, day): 1}
                 try:
                     key_tuple = ast.literal_eval(k) if isinstance(k, str) else k
                     if isinstance(key_tuple, (tuple, list)) and len(key_tuple) >= 2 and v > 0:
-                        # Extract day. Usually day is the last element
                         day = int(key_tuple[-1])
                         if day in daily_counts:
                             daily_counts[day] += 1
@@ -182,13 +181,9 @@ def aggregate_scenarios(df, d_focus=28):
         return daily_counts
 
     def extract_pre_y_days(d, target_days):
-        """
-        Special extractor for pre_y format: {(patient_id, day): 0_or_1}
-        where 0 = Human (therapist) session, 1 = AI session.
-        Returns two dicts: human_counts and ai_counts.
-        """
+        """pre_y: {(patient, day): 0=Human / 1=AI}"""
         human_counts = {day: 0 for day in target_days}
-        ai_counts = {day: 0 for day in target_days}
+        ai_counts    = {day: 0 for day in target_days}
         if not isinstance(d, dict):
             return human_counts, ai_counts
         for k, v in d.items():
@@ -205,91 +200,133 @@ def aggregate_scenarios(df, d_focus=28):
                 pass
         return human_counts, ai_counts
 
+    # Per-scenario lists for each of the 6 series
+    period_keys = ['pre_human', 'focus_human', 'post_human',
+                   'pre_ai',    'focus_ai',    'post_ai']
+    all_series = {k: [] for k in period_keys}
+
     for idx, row in df.iterrows():
-        human_daily = {day: 0 for day in days}
-        ai_daily = {day: 0 for day in days}
-        
-        # Collect from: pre_x, focus_x, post_x (Human) and focus_y, post_y (AI only entries)
-        # pre_y is special: value 0=Human, 1=AI -> needs its own extractor
-        x_cols = ['pre_x', 'focus_x', 'post_x']
-        y_cols = ['focus_y', 'post_y']
-        
-        # Process X assignments (Human)
-        for col in x_cols:
-            if col in row:
-                x_dict = parse_dict_col(row[col])
-                counts = extract_days_from_dict(x_dict, days, 'X')
-                for day in days:
-                    human_daily[day] += counts[day]
+        # Initialise per-day counters for this scenario
+        sc = {k: {day: 0 for day in days} for k in period_keys}
 
-        # Process pre_y: format {(patient, day): 0=Human / 1=AI}
+        # ── PRE period ────────────────────────────────────────────────
+        if 'pre_x' in row:
+            for day, cnt in extract_days_from_dict(parse_dict_col(row['pre_x']), days).items():
+                sc['pre_human'][day] += cnt
+
         if 'pre_y' in row:
-            pre_y_dict = parse_dict_col(row['pre_y'])
-            h_counts, a_counts = extract_pre_y_days(pre_y_dict, days)
+            h, a = extract_pre_y_days(parse_dict_col(row['pre_y']), days)
             for day in days:
-                human_daily[day] += h_counts[day]
-                ai_daily[day] += a_counts[day]
+                sc['pre_human'][day] += h[day]
+                sc['pre_ai'][day]    += a[day]
 
-        # Process Y assignments (AI only: focus_y, post_y)
-        for col in y_cols:
-            if col in row:
-                y_dict = parse_dict_col(row[col])
-                counts = extract_days_from_dict(y_dict, days, 'Y')
-                for day in days:
-                    ai_daily[day] += counts[day]
+        # ── FOCUS period ───────────────────────────────────────────────
+        if 'focus_x' in row:
+            for day, cnt in extract_days_from_dict(parse_dict_col(row['focus_x']), days).items():
+                sc['focus_human'][day] += cnt
 
-        # Also fallback strictly parsing focus_session_dict if focus_x/y is missing but we're in the loop
+        if 'focus_y' in row:
+            for day, cnt in extract_days_from_dict(parse_dict_col(row['focus_y']), days).items():
+                sc['focus_ai'][day] += cnt
+
+        # Fallback: use focus_session_dict if focus_x / focus_y are both empty
         if 'focus_session_dict' in row and pd.notna(row['focus_session_dict']):
-            session_dict = parse_dict_col(row['focus_session_dict'])
-            focus_x_empty = ('focus_x' not in row or pd.isna(row['focus_x']) or str(row['focus_x']) == '{}')
-            focus_y_empty = ('focus_y' not in row or pd.isna(row['focus_y']) or str(row['focus_y']) == '{}')
-            
-            if focus_x_empty and focus_y_empty:
-                # Use focus_session_dict alone
-                for patient_id, schedule in session_dict.items():
+            fx_empty = 'focus_x' not in row or pd.isna(row['focus_x']) or str(row['focus_x']) == '{}'
+            fy_empty = 'focus_y' not in row or pd.isna(row['focus_y']) or str(row['focus_y']) == '{}'
+            if fx_empty and fy_empty:
+                sd = parse_dict_col(row['focus_session_dict'])
+                for patient_id, schedule in sd.items():
                     for d_str, session_type in schedule.items():
                         day = int(d_str)
                         if 1 <= day <= d_focus:
                             if session_type == 'H':
-                                human_daily[day] += 1
+                                sc['focus_human'][day] += 1
                             elif session_type == 'A':
-                                ai_daily[day] += 1
+                                sc['focus_ai'][day]    += 1
 
-        # Convert to arrays in day order
-        human_counts = [human_daily[day] for day in days]
-        ai_counts = [ai_daily[day] for day in days]
+        # ── POST period ────────────────────────────────────────────────
+        if 'post_x' in row:
+            for day, cnt in extract_days_from_dict(parse_dict_col(row['post_x']), days).items():
+                sc['post_human'][day] += cnt
 
-        all_human_sessions.append(human_counts)
-        all_ai_sessions.append(ai_counts)
+        if 'post_y' in row:
+            for day, cnt in extract_days_from_dict(parse_dict_col(row['post_y']), days).items():
+                sc['post_ai'][day] += cnt
 
-    # (Replaced by single iteration loop above)
+        # Append per-day arrays to scenario lists
+        for k in period_keys:
+            all_series[k].append([sc[k][day] for day in days])
 
-    # Calculate mean and std
-    human_mean = np.mean(all_human_sessions, axis=0) if all_human_sessions else []
-    human_std = np.std(all_human_sessions, axis=0) if all_human_sessions else []
-    ai_mean = np.mean(all_ai_sessions, axis=0) if all_ai_sessions else []
-    ai_std = np.std(all_ai_sessions, axis=0) if all_ai_sessions else []
+    # ── Compute means / stds  ─────────────────────────────────────────
+    period_means = {}
+    period_stds  = {}
+    for k in period_keys:
+        arr = np.array(all_series[k]) if all_series[k] else np.zeros((1, len(days)))
+        period_means[k] = np.mean(arr, axis=0)
+        period_stds[k]  = np.std(arr,  axis=0)
 
-    return days, human_mean, human_std, ai_mean, ai_std, all_human_sessions, all_ai_sessions
+    # Legacy flat arrays (sum of all periods)
+    human_mean = period_means['pre_human'] + period_means['focus_human'] + period_means['post_human']
+    human_std  = np.sqrt(period_stds['pre_human']**2 + period_stds['focus_human']**2 + period_stds['post_human']**2)
+    ai_mean    = period_means['pre_ai']    + period_means['focus_ai']    + period_means['post_ai']
+    ai_std     = np.sqrt(period_stds['pre_ai']**2    + period_stds['focus_ai']**2    + period_stds['post_ai']**2)
+
+    all_human_sessions = [np.array(all_series['pre_human'][i]) +
+                          np.array(all_series['focus_human'][i]) +
+                          np.array(all_series['post_human'][i])
+                          for i in range(len(all_series['pre_human']))]
+    all_ai_sessions    = [np.array(all_series['pre_ai'][i]) +
+                          np.array(all_series['focus_ai'][i]) +
+                          np.array(all_series['post_ai'][i])
+                          for i in range(len(all_series['pre_ai']))]
+
+    return (days, period_means, period_stds,
+            human_mean, human_std, ai_mean, ai_std,
+            all_human_sessions, all_ai_sessions)
+
+def _add_period_bars(ax, x, width, period_means, weekend=True):
+    """
+    Draw 6-segment stacked bars (Pre/Focus/Post × Human/AI) on *ax*.
+    Stacking order (bottom→top): Pre-H · Focus-H · Post-H · Pre-AI · Focus-AI · Post-AI
+    Returns the list of bar-container objects (for legend handles).
+    """
+    ph  = period_means['pre_human']
+    fh  = period_means['focus_human']
+    poh = period_means['post_human']
+    pa  = period_means['pre_ai']
+    fa  = period_means['focus_ai']
+    poa = period_means['post_ai']
+
+    kw = dict(width=width, edgecolor='white', linewidth=0.4)
+    b0 = ax.bar(x, ph,  **kw, color=COLOR_PRE_HUMAN,   label='Pre – Therapist')
+    b1 = ax.bar(x, fh,  **kw, bottom=ph,               color=COLOR_FOCUS_HUMAN, label='Focus – Therapist')
+    b2 = ax.bar(x, poh, **kw, bottom=ph+fh,            color=COLOR_POST_HUMAN,  label='Post – Therapist')
+    b3 = ax.bar(x, pa,  **kw, bottom=ph+fh+poh,        color=COLOR_PRE_AI,      label='Pre – AI')
+    b4 = ax.bar(x, fa,  **kw, bottom=ph+fh+poh+pa,     color=COLOR_FOCUS_AI,    label='Focus – AI')
+    b5 = ax.bar(x, poa, **kw, bottom=ph+fh+poh+pa+fa,  color=COLOR_POST_AI,     label='Post – AI')
+
+    if weekend:
+        for start_x, end_x in [(4.5, 6.5), (11.5, 13.5), (18.5, 20.5), (25.5, 27.5)]:
+            ax.axvspan(start_x, end_x, color='gray', alpha=0.10, zorder=0)
+            ax.axvline(x=start_x, color='gray', linestyle='--', linewidth=0.8, alpha=0.5)
+            ax.axvline(x=end_x,   color='gray', linestyle='--', linewidth=0.8, alpha=0.5)
+
+    return [b0, b1, b2, b3, b4, b5]
+
 
 def create_stacked_bar_plot_by_ptr(days, ptr_data, output_path):
     """
     Create 3-panel stacked bar chart stratified by PTR category.
+    Each bar is split into 6 segments: Pre/Focus/Post × Human/AI.
 
     Args:
         days: array of days (1-28)
-        ptr_data: dict mapping PTR category to (human_mean, human_std, ai_mean, ai_std)
+        ptr_data: dict mapping PTR category to (period_means, period_stds)
         output_path: path to save the plot
     """
-    # PTR category order and labels
     ptr_order = ['Light', 'Medium', 'Heavy']
+    fig, axes = plt.subplots(3, 1, figsize=(14, 13), sharex=True)
 
-    # Create figure with 3 vertically stacked subplots
-    fig, axes = plt.subplots(3, 1, figsize=(14, 12), sharex=True)
-    #fig.suptitle('AI vs Human Session Demand by Patient-to-Therapist Ratio',
-                 #fontsize=16, fontweight='bold', y=0.995)
-
-    # Bar positions
     x = np.arange(len(days))
     width = 0.8
 
@@ -297,76 +334,49 @@ def create_stacked_bar_plot_by_ptr(days, ptr_data, output_path):
         if ptr_cat not in ptr_data:
             continue
 
-        human_mean, human_std, ai_mean, ai_std = ptr_data[ptr_cat]
+        period_means, period_stds = ptr_data[ptr_cat]
+        bar_handles = _add_period_bars(ax, x, width, period_means)
 
-        # Create stacked bars
-        ax.bar(x, human_mean, width, label='Therapist Sessions',
-               color=COLOR_HUMAN, edgecolor='white', linewidth=0.5)
-        ax.bar(x, ai_mean, width, bottom=human_mean,
-               label='AI Sessions',
-               color=COLOR_AI, edgecolor='white', linewidth=0.5)
-
-        # Styling
         ax.set_ylabel('Sessions', fontsize=11, fontweight='bold')
         ax.set_title(f'{ptr_cat} PTR', fontsize=13, fontweight='bold', loc='left', pad=10)
         ax.grid(axis='y', alpha=0.3, linestyle='--')
         ax.set_axisbelow(True)
 
-        # Highlight weekends (days 6-7, 13-14, 20-21, 27-28)
-        # x-axis: day D is at position D-1, so days 6-7 are at positions 5-6
-        # To cover BOTH days, span from 4.5 to 6.5 (covers positions 5 and 6)
-        weekend_ranges_x = [(4.5, 6.5), (11.5, 13.5), (18.5, 20.5), (25.5, 27.5)]
-        for start_x, end_x in weekend_ranges_x:
-            ax.axvspan(start_x, end_x, color='gray', alpha=0.1, zorder=0)
-            ax.axvline(x=start_x, color='gray', linestyle='--', linewidth=0.8, alpha=0.5)
-            ax.axvline(x=end_x, color='gray', linestyle='--', linewidth=0.8, alpha=0.5)
-
-        # Add legend only to top subplot
         if idx == 0:
-            ax.legend(loc='upper right', ncol=2, framealpha=0.95, fontsize=10)
+            ax.legend(handles=bar_handles,
+                      loc='upper right', ncol=3, framealpha=0.95, fontsize=9)
 
-    # X-axis label and ticks on bottom subplot only
     axes[-1].set_xlabel('Day', fontsize=12, fontweight='bold')
     axes[-1].set_xticks(x)
     axes[-1].set_xticklabels([str(d) for d in days])
 
     plt.tight_layout()
-
-    # Save as PNG
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     print(f"✓ Plot saved (PNG): {output_path}")
-
-    # Save as SVG
     svg_path = str(output_path).replace('.png', '.svg')
     plt.savefig(svg_path, format='svg', bbox_inches='tight')
     print(f"✓ Plot saved (SVG): {svg_path}")
-
     plt.close()
 
-def create_single_stacked_bar_plot(days, human_mean, human_std, ai_mean, ai_std, output_path):
+def create_single_stacked_bar_plot(days, period_means, period_stds, output_path,
+                                   # legacy positional args (ignored if period_means is a dict)
+                                   _human_std=None, _ai_mean=None, _ai_std=None):
     """
-    Create a single stacked bar chart for aggregated data.
+    Create a single stacked bar chart split by Pre/Focus/Post × Human/AI.
 
     Args:
-        days: array of days (1-28)
-        human_mean: mean human sessions per day
-        human_std: std deviation of human sessions
-        ai_mean: mean AI sessions per day
-        ai_std: std deviation of AI sessions
-        output_path: path to save the plot
+        days         : array of days (1-28)
+        period_means : dict with keys pre_human / focus_human / post_human /
+                       pre_ai / focus_ai / post_ai  →  np.array
+        period_stds  : same structure (currently unused in plot, kept for API)
+        output_path  : path to save the plot
     """
     fig, ax = plt.subplots(figsize=(14, 6))
-    #fig.suptitle('AI vs Human Session Demand (Sigmoid Scenarios)',
-                 #fontsize=16, fontweight='bold', y=0.995)
 
-    x = np.arange(len(days))
+    x     = np.arange(len(days))
     width = 0.8
 
-    ax.bar(x, human_mean, width, label='Therapist Sessions',
-           color=COLOR_HUMAN, edgecolor='white', linewidth=0.5)
-    ax.bar(x, ai_mean, width, bottom=human_mean,
-           label='AI Sessions',
-           color=COLOR_AI, edgecolor='white', linewidth=0.5)
+    bar_handles = _add_period_bars(ax, x, width, period_means)
 
     ax.set_ylabel('Sessions', fontsize=11, fontweight='bold')
     ax.set_xlabel('Day', fontsize=12, fontweight='bold')
@@ -374,27 +384,16 @@ def create_single_stacked_bar_plot(days, human_mean, human_std, ai_mean, ai_std,
     ax.set_xticklabels([str(d) for d in days])
     ax.grid(axis='y', alpha=0.3, linestyle='--')
     ax.set_axisbelow(True)
-    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.12), ncol=2, framealpha=0.95, fontsize=10)
+    ax.legend(handles=bar_handles,
+              loc='upper center', bbox_to_anchor=(0.5, -0.12),
+              ncol=3, framealpha=0.95, fontsize=10)
 
-    # Highlight weekends (days 6-7, 13-14, 20-21, 27-28)
-    # x-axis: day D is at position D-1, so days 6-7 are at positions 5-6
-    weekend_ranges_x = [(4.5, 6.5), (11.5, 13.5), (18.5, 20.5), (25.5, 27.5)]
-    for start_x, end_x in weekend_ranges_x:
-        ax.axvspan(start_x, end_x, color='gray', alpha=0.1, zorder=0)
-        ax.axvline(x=start_x, color='gray', linestyle='--', linewidth=0.8, alpha=0.5)
-        ax.axvline(x=end_x, color='gray', linestyle='--', linewidth=0.8, alpha=0.5)
-
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjust layout to prevent title overlap
-
-    # Save as PNG
+    plt.tight_layout(rect=[0, 0.06, 1, 1.0])
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     print(f"✓ Plot saved (PNG): {output_path}")
-
-    # Save as SVG
     svg_path = str(output_path).replace('.png', '.svg')
     plt.savefig(svg_path, format='svg', bbox_inches='tight')
     print(f"✓ Plot saved (SVG): {svg_path}")
-
     plt.close()
 
 def main():
@@ -443,13 +442,15 @@ def main():
                 print(f"   → No scenarios found for {ptr_cat} PTR category. Skipping.")
                 continue
 
-            days_cat, human_mean, human_std, ai_mean, ai_std, all_human_sessions, all_ai_sessions = aggregate_scenarios(df_cat, D_FOCUS)
-            ptr_data[ptr_cat] = (human_mean, human_std, ai_mean, ai_std)
+            (days_cat, period_means, period_stds,
+             human_mean, human_std, ai_mean, ai_std,
+             all_human_sessions, all_ai_sessions) = aggregate_scenarios(df_cat, D_FOCUS)
+            ptr_data[ptr_cat] = (period_means, period_stds)
 
             # Summary for this category
             total_human = human_mean.sum()
-            total_ai = ai_mean.sum()
-            total = total_human + total_ai
+            total_ai    = ai_mean.sum()
+            total       = total_human + total_ai
             if total > 0:
                 print(f"   {ptr_cat}: {100*total_human/total:.1f}% Human, {100*total_ai/total:.1f}% AI")
             else:
@@ -469,54 +470,63 @@ def main():
     else:
         # Aggregate over all PTR categories
         print(f"\n2. Aggregating across all scenarios...")
-        days, human_mean, human_std, ai_mean, ai_std, all_human_sessions, all_ai_sessions = aggregate_scenarios(df, D_FOCUS)
+        (days, period_means, period_stds,
+         human_mean, human_std, ai_mean, ai_std,
+         all_human_sessions, all_ai_sessions) = aggregate_scenarios(df, D_FOCUS)
 
-        print("\n--- Daily Session Means (All Scenarios) ---")
-        print(f"{'Day':>4} | {'Therapist (Human)':>17} | {'AI':>10}")
-        print("-" * 38)
+        print("\n--- Daily Session Means by Period (All Scenarios) ---")
+        header = f"{'Day':>4} | {'Pre-H':>8} | {'Foc-H':>8} | {'Post-H':>8} | {'Pre-AI':>8} | {'Foc-AI':>8} | {'Post-AI':>8}"
+        print(header)
+        print("-" * len(header))
         for d in range(D_FOCUS):
-            print(f"{d+1:>4} | {human_mean[d]:>17.4f} | {ai_mean[d]:>10.4f}")
-        print("-" * 38)
-        
+            print(f"{d+1:>4} | "
+                  f"{period_means['pre_human'][d]:>8.2f} | "
+                  f"{period_means['focus_human'][d]:>8.2f} | "
+                  f"{period_means['post_human'][d]:>8.2f} | "
+                  f"{period_means['pre_ai'][d]:>8.2f} | "
+                  f"{period_means['focus_ai'][d]:>8.2f} | "
+                  f"{period_means['post_ai'][d]:>8.2f}")
+        print("-" * len(header))
+
         Path(output_dir).mkdir(exist_ok=True, parents=True)
         total_human = human_mean.sum()
-        total_ai = ai_mean.sum()
-        total = total_human + total_ai
+        total_ai    = ai_mean.sum()
+        total       = total_human + total_ai
         print(f"   → Total: {100*total_human/total:.1f}% Human, {100*total_ai/total:.1f}% AI")
 
-        # Export CSV
+        # Export CSV (extended with per-period breakdown)
         try:
-            csv_path = Path(output_dir) / "buffer_boxplot_data.csv"
+            csv_path  = Path(output_dir) / "buffer_boxplot_data.csv"
             stats_list = []
             for d in range(D_FOCUS):
                 day_num = d + 1
-                is_weekend = 1 if day_num in [6, 7, 13, 14, 20, 21, 27, 28] else 0
                 stats_list.append({
-                    'period': day_num,
-                    'hom_sessions': round(human_mean[d], 4),
-                    'ai_sessions': round(ai_mean[d], 4),
-                    'buffer_period': is_weekend
+                    'period':          day_num,
+                    'pre_human':       round(period_means['pre_human'][d],   4),
+                    'focus_human':     round(period_means['focus_human'][d], 4),
+                    'post_human':      round(period_means['post_human'][d],  4),
+                    'pre_ai':          round(period_means['pre_ai'][d],      4),
+                    'focus_ai':        round(period_means['focus_ai'][d],    4),
+                    'post_ai':         round(period_means['post_ai'][d],     4),
+                    'hom_sessions':    round(human_mean[d], 4),
+                    'ai_sessions':     round(ai_mean[d],    4),
+                    'buffer_period':   1 if day_num in [6, 7, 13, 14, 20, 21, 27, 28] else 0,
                 })
-            
             if stats_list:
-                stats_df = pd.DataFrame(stats_list)
-                stats_df.to_csv(csv_path, index=False)
-                print(f"✓ Basic CSV data saved to: {csv_path}")
+                pd.DataFrame(stats_list).to_csv(csv_path, index=False)
+                print(f"✓ CSV data saved to: {csv_path}")
         except Exception as e:
-            print(f"[Error] Could not save Boxplot CSV: {e}")
+            print(f"[Error] Could not save CSV: {e}")
 
-        # Create output directory and plot
         Path(output_dir).mkdir(exist_ok=True)
         output_path = Path(output_dir) / OUTPUT_FILE
-        
+
         print(f"\n3. Creating single plot...")
         create_single_stacked_bar_plot(
             days=days,
-            human_mean=human_mean,
-            human_std=human_std,
-            ai_mean=ai_mean,
-            ai_std=ai_std,
-            output_path=output_path
+            period_means=period_means,
+            period_stds=period_stds,
+            output_path=output_path,
         )
     
     print("\n" + "=" * 60)
