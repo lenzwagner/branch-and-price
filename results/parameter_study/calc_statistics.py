@@ -658,9 +658,9 @@ def generate_statistics_report(data_dict=None, results_dir=None, save_to_file=Tr
     returns:
         dictionary with all statistics
     """
-    if results_dir is none:
+    if results_dir is None:
         results_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'results')
-    if data_dict is none:
+    if data_dict is None:
         data_dict = load_latest_results(results_dir)
 
     print(f"\n{'=' * 80}")
@@ -669,9 +669,9 @@ def generate_statistics_report(data_dict=None, results_dir=None, save_to_file=Tr
     print(f"total instances loaded: {len(data_dict)}\n")
 
     # calculate all statistics
-    ai_share_stats = calc_ai_share(data_dict, verbose=true)
-    therapist_util_stats = calc_therapist_utilization(data_dict, verbose=true)
-    therapist_max_util_stats = calc_therapist_max_utilization(data_dict, verbose=true)
+    ai_share_stats = calc_ai_share(data_dict, verbose=True)
+    therapist_util_stats = calc_therapist_utilization(data_dict, verbose=True)
+    therapist_max_util_stats = calc_therapist_max_utilization(data_dict, verbose=True)
 
     all_stats = {
         'ai_share': ai_share_stats,
@@ -684,7 +684,7 @@ def generate_statistics_report(data_dict=None, results_dir=None, save_to_file=Tr
         timestamp = datetime.now().strftime("%y%m%d_%h%m%s")
         report_filename = os.path.join(results_dir, f"statistics_report_{timestamp}.txt")
 
-        os.makedirs(results_dir, exist_ok=true)
+        os.makedirs(results_dir, exist_ok=True)
 
         with open(report_filename, 'w') as f:
             f.write("=" * 80 + "\n")

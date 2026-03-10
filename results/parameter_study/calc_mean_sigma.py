@@ -17,7 +17,7 @@ def get_focus_patient_count(val):
 
 def calculate_stats():
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    input_file = os.path.join(script_dir, 'results', 'results_los_study_learning.xlsx')
+    input_file = os.path.join(script_dir, 'results', 'results_los_study.xlsx')
     
     if not os.path.exists(input_file):
         print(f"Error: Input file not found at {input_file}")
@@ -133,6 +133,8 @@ def calculate_stats():
     diff_output_file = os.path.join(script_dir, 'results', 'data_los.csv')
     final_stats.to_csv(diff_output_file, index=False)
     print(f"\nDifference stats successfully saved to {diff_output_file}")
+    
+    print("\n" + final_stats.to_csv(index=False).strip())
 
 if __name__ == "__main__":
     calculate_stats()

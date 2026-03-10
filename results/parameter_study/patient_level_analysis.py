@@ -147,10 +147,14 @@ def main():
                 rows.append(row)
         df_all = pd.DataFrame(rows)
     else:
-        if not os.path.exists(INPUT_FILE):
-            raise FileNotFoundError(f"Keine Dateien gefunden in {RESULTS_DIR}")
-        print(f"Lade Daten aus Excel: {INPUT_FILE}")
-        df_all = pd.read_excel(INPUT_FILE)
+        excel_files = glob.glob(os.path.join(RESULTS_DIR, '*.xlsx'))
+        excel_files = [f for f in excel_files if not os.path.basename(f).startswith('~$')]
+        if excel_files:
+            input_file = max(excel_files, key=os.path.getmtime)
+            print(f"Lade Daten aus Excel: {input_file}")
+            df_all = pd.read_excel(input_file)
+        else:
+            raise FileNotFoundError(f"Keine .xlsx Dateien gefunden in {RESULTS_DIR}")
 
     # 1. Pairing Human & Hybrid instances
     paired_data = defaultdict(lambda: {"human": None, "hybrid": None})
