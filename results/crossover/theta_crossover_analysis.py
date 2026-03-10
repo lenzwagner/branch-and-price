@@ -640,7 +640,7 @@ def main():
                         help='Number of baseline therapists (overrides Excel value)')
 
     # Sweep parameters
-    parser.add_argument('--reduction', nargs='+', type=int, default=[1],
+    parser.add_argument('--reduction', nargs='+', type=int, default=[1,2],
                         help='Number(s) of therapists to remove (default: 1, e.g. --reduction 1 2)')
     parser.add_argument('--steps', type=int, default=20,
                         help='Number of theta steps from 0 to 1 (default: 20 → Δ=0.05)')
