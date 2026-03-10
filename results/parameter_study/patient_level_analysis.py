@@ -21,7 +21,7 @@ import numpy as np
 # ---------------------------------------------------------------------------
 SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
 RESULTS_DIR = os.path.join(SCRIPT_DIR, "results")
-INPUT_FILE  = os.path.join(RESULTS_DIR, "results_los_study.xlsx")
+INPUT_FILE  = os.path.join(RESULTS_DIR, "results_los_study_learning.xlsx")
 
 DRG_COLS    = ["drg_patients_E65A", "drg_patients_E65B", "drg_patients_E65C"]
 DRG_LABELS  = ["E65A", "E65B", "E65C"]

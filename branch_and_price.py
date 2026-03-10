@@ -652,7 +652,7 @@ class BranchAndPrice:
                     if master.Model.SolCount > 0:
                         sol_name = f"Node_{node_id if node_id is not None else 'root'}.sol"
                         sol_path = os.path.join('sols/Integral', sol_name)
-                        # master.Model.write(sol_path)
+                        master.Model.write(sol_path)
                         self.logger.info(f"   [IP Save] Solution saved to {sol_path}")
 
                     success = True
@@ -689,7 +689,7 @@ class BranchAndPrice:
                         if master.Model.SolCount > 0:
                             sol_name = f"Node_{node_id if node_id is not None else 'root'}.sol"
                             sol_path = os.path.join('sols/Integral', sol_name)
-                            # master.Model.write(sol_path)
+                            master.Model.write(sol_path)
                             self.logger.info(f"   [IP Save] Solution (Time Limit) saved to {sol_path}")
                         success = True
                         result_obj = ip_obj
@@ -1114,9 +1114,8 @@ class BranchAndPrice:
                 self.stats['max_tree_depth'] = max(self.stats['max_tree_depth'], current_node.depth)
 
                 if self.save_lps:
-                    # master.Model.write(f"LPs/MP/SOLs/new_node_{current_node.node_id}.sol")
-                    # master.Model.write(f"LPs/MP/LPs/new_node_{current_node.node_id}.lp")
-                    pass
+                    master.Model.write(f"LPs/MP/SOLs/new_node_{current_node.node_id}.sol")
+                    master.Model.write(f"LPs/MP/LPs/new_node_{current_node.node_id}.lp")
 
 
                 if master.Model.status != 2:  # Not optimal
@@ -2698,7 +2697,7 @@ class BranchAndPrice:
             # Save LP per iteration for Root Node
             if self.save_lps and node.node_id == 0:
                 lp_filename = f"LPs/MP/Root/Root_Iter_{cg_iteration}.lp"
-                # master.Model.write(lp_filename)
+                master.Model.write(lp_filename)
                 self.logger.info(f"    [LP Saved] Saved root node LP to {lp_filename}")
 
 
@@ -2706,8 +2705,7 @@ class BranchAndPrice:
         self.logger.info(f"\n    [Node {node.node_id}] Final LP solve...")
 
         if self.save_lps:
-            # master.Model.write(f"LPs/MP/LPs/mp_final_{node.node_id}.lp")
-            pass
+            master.Model.write(f"LPs/MP/LPs/mp_final_{node.node_id}.lp")
         master.solRelModel()
         if master.Model.status != 2:  # GRB.OPTIMAL
             self.logger.warning(f"    ⚠️  Final Master infeasible or unbounded at node {node.node_id}")
@@ -2730,7 +2728,7 @@ class BranchAndPrice:
             if master.Model.SolCount > 0:
                 sol_name = f"Node_{node.node_id}.sol"
                 sol_path = os.path.join('sols/Integral', sol_name)
-                # master.Model.write(sol_path)
+                master.Model.write(sol_path)
                 self.logger.info(f"   [IP Save] Integral node solution saved to {sol_path}")
 
         # Store results in node
@@ -3936,7 +3934,7 @@ class BranchAndPrice:
                     if master.Model.SolCount > 0:
                         sol_name = f"Node_{current_node_count}_heuristic.sol"
                         sol_path = os.path.join('sols/Integral', sol_name)
-                        # master.Model.write(sol_path)
+                        master.Model.write(sol_path)
                         self.logger.info(f"   [IP Save] Heuristic solution saved to {sol_path}")
 
                     print("\n" + "╔" + "═" * 98 + "╗")
@@ -3995,7 +3993,7 @@ class BranchAndPrice:
                         if master.Model.SolCount > 0:
                             sol_name = f"Node_{current_node_count}_heuristic_timeout.sol"
                             sol_path = os.path.join('sols/Integral', sol_name)
-                            # master.Model.write(sol_path)
+                            master.Model.write(sol_path)
                             self.logger.info(f"   [IP Save] Heuristic solution (Time Limit) saved to {sol_path}")
                         self.stats['incumbent_updates'] += 1
                         self.update_gap()

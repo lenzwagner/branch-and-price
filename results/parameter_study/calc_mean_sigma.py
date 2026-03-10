@@ -17,7 +17,7 @@ def get_focus_patient_count(val):
 
 def calculate_stats():
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    input_file = os.path.join(script_dir, 'results', 'results_los_study.xlsx')
+    input_file = os.path.join(script_dir, 'results', 'results_los_study_learning.xlsx')
     
     if not os.path.exists(input_file):
         print(f"Error: Input file not found at {input_file}")
