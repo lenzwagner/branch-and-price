@@ -598,7 +598,8 @@ class ColumnGeneration:
             print("[Finalize] Solving integer program...")
         self.is_integral, self.lp_obj, self.frac_info = self.master.finSol()
         if self.save_lps:
-            self.master.Model.write('Final_root.lp')
+            # self.master.Model.write('Final_root.lp')
+            pass
         self.ip_obj = self.master.Model.objVal
 
         # Calculate gap
@@ -677,12 +678,12 @@ class ColumnGeneration:
         if self.save_lps:
             # 1. Continuous Master LP
             if master_filename:
-                self.master.Model.write(master_filename)
+                # self.master.Model.write(master_filename)
                 print(f"[Export] Master LP saved to {master_filename}")
             
             # 2. Compact Model
             if compact_filename:
-                self.problem.Model.write(compact_filename)
+                # self.problem.Model.write(compact_filename)
                 print(f"[Export] Compact LP saved to {compact_filename}")
 
             # 3. Incumbent LP (MIP)
@@ -694,7 +695,7 @@ class ColumnGeneration:
                         var.VType = gp.GRB.INTEGER
                     self.master.Model.update()
                     
-                    self.master.Model.write(incumbent_lp_filename)
+                    # self.master.Model.write(incumbent_lp_filename)
                     print(f"[Export] Incumbent MIP (LP) saved to {incumbent_lp_filename}")
                     
                     # Note: We leave it as Integer (solver is done anyway)

@@ -575,7 +575,8 @@ class ColumnGeneration:
             print("[Finalize] Solving integer program...")
         self.is_integral, self.lp_obj, self.frac_info = self.master.finSol()
         if self.save_lps:
-            self.master.Model.write('Final_root.lp')
+            # self.master.Model.write('Final_root.lp')
+            pass
         self.ip_obj = self.master.Model.objVal
 
         # Calculate gap
@@ -649,8 +650,8 @@ class ColumnGeneration:
         Export master and compact models to LP files.
         """
         if self.save_lps:
-            self.master.Model.write(master_filename)
-            self.problem.Model.write(compact_filename)
+            # self.master.Model.write(master_filename)
+            # self.problem.Model.write(compact_filename)
             print(f"[Export] Models saved to {master_filename} and {compact_filename}")
         else:
             print(f"[Export] LP saving disabled, skipping export")
