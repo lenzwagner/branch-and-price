@@ -318,8 +318,103 @@ def main():
     print(f"CSV Export erstellt: {csv_filename}")
     print("\nAuszug (copyable):")
     print("Workload,value")
-    for _, row in csv_df.iterrows():
-        print(f"{row['Workload']},{row['value']}")
+    # =========================================================================
+    # PART F: MAX EFFICIENCY GAIN BY MIX (Stratified by Workload and LearnType)
+    # =========================================================================
+    print("\n" + "=" * 80)
+    print(" F: MAXIMALER EFFIZIENZGEWINN PRO MIX (Nach Workload und LearnType) ")
+    print("=" * 80)
+
+    all_workloads = df_clean['pttr'].unique()
+    gain_results = []
+    plot_data = []
+    
+    for ptr in all_workloads:
+        ptr_df = df_clean[df_clean['pttr'] == ptr]
+        
+        for lt in ['exp', 'sigmoid', 'lin']:
+            max_gain = -np.inf
+            best_mix = None
+            mix_gains = {}
+            
+            for mix in mix_order:
+                mix_df = ptr_df[ptr_df['mix_scenario'] == mix]
+                human_rows = mix_df[mix_df['learn_type'] == 'humanonly']
+                comp_rows = mix_df[mix_df['learn_type'] == lt]
+                
+                if not human_rows.empty and not comp_rows.empty:
+                    human_los = human_rows['los_avg'].mean()
+                    comp_los = comp_rows['los_avg'].mean()
+                    if pd.notna(human_los) and pd.notna(comp_los) and human_los > 0:
+                        gain = ((human_los - comp_los) / human_los) * 100
+                        mix_gains[mix] = gain
+                        if gain > max_gain:
+                            max_gain = gain
+                            best_mix = mix
+                        
+                        plot_data.append({
+                            'Workload': ptr,
+                            'LearnType': lt,
+                            'Mix': mix,
+                            'Gain': gain
+                        })
+                            
+            if best_mix:
+                # Format the outputs, handle missing mix values
+                gain_results.append({
+                    'Workload': ptr,
+                    'LearnType': lt,
+                    'Best_Mix': best_mix,
+                    'Max_Gain_%': f"{max_gain:.2f}%",
+                    'Base_%': f"{mix_gains.get('Base', np.nan):.2f}" if 'Base' in mix_gains else "N/A",
+                    'Uniform_%': f"{mix_gains.get('Uniform', np.nan):.2f}" if 'Uniform' in mix_gains else "N/A",
+                    'Complex_%': f"{mix_gains.get('Complex', np.nan):.2f}" if 'Complex' in mix_gains else "N/A"
+                })
+                
+    if gain_results:
+        gain_df = pd.DataFrame(gain_results)
+        print(gain_df.to_string(index=False))
+        
+        if plot_data:
+            plot_df = pd.DataFrame(plot_data)
+            
+            fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+            titles_dict = {'exp': 'Exponential Learning', 'sigmoid': 'Sigmoidal Learning', 'lin': 'Linear Learning'}
+            
+            # Determine ordering for Workload (keep existing default if applicable)
+            workload_order = ['light', 'medium', 'heavy']
+            workload_order = [w for w in workload_order if w in plot_df['Workload'].unique()]
+            if not workload_order:
+                workload_order = plot_df['Workload'].unique()
+                
+            for i, lt in enumerate(['exp', 'sigmoid', 'lin']):
+                ax = axes[i]
+                data = plot_df[plot_df['LearnType'] == lt]
+                if not data.empty:
+                    sns.barplot(data=data, x='Workload', y='Gain', hue='Mix', 
+                                order=workload_order, hue_order=['Base', 'Uniform', 'Complex'], 
+                                ax=ax, palette='viridis')
+                    ax.set_title(titles_dict.get(lt, lt), fontsize=14)
+                    ax.set_ylabel("Efficiency Gain (%)" if i == 0 else "")
+                    ax.set_xlabel("Workload")
+                    
+                    if i != 2:
+                        ax.get_legend().remove()
+                    else:
+                        ax.legend(title='Mix Scenario', bbox_to_anchor=(1.05, 1), loc='upper left')
+
+            plt.suptitle("Efficiency Gain (%) by Workload, Mix Scenario, and Learning Type", fontsize=16, y=1.05)
+            plt.tight_layout()
+            
+            save_path_png_f = os.path.join(PLOT_DIR, "max_gain_by_mix.png")
+            save_path_svg_f = os.path.join(PLOT_DIR, "max_gain_by_mix.svg")
+            plt.savefig(save_path_png_f, dpi=300, bbox_inches='tight')
+            plt.savefig(save_path_svg_f, format='svg', bbox_inches='tight')
+            plt.close()
+            
+            print(f"\nPlot für Effizienzgewinne pro Mix erfolgreich erstellt und gespeichert unter:\n- {save_path_png_f}\n- {save_path_svg_f}")
+    else:
+        print("Keine Daten für maximalen Effizienzgewinn gefunden.")
 
     print("\n" + "=" * 80)
     print(" ANALYSE ABGESCHLOSSEN ")

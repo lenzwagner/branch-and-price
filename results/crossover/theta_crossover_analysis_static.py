@@ -98,7 +98,7 @@ def run_crossover_analysis(
     D_focus: int,
     pttr: str,
     T: int,
-    reduction: int,
+    reduction,          # int or list[int]
     steps: int,
     learn_type: str,
     k_learn: float,
@@ -115,7 +115,7 @@ def run_crossover_analysis(
         D_focus:      Number of focus days
         pttr:         Patient-to-Therapist-Ratio Szenario
         T:            Number of therapists (Baseline)
-        reduction:    Number of therapists to remove
+        reduction:    Number(s) of therapists to remove - int or list[int]
         steps:        Number of theta steps (0..1 in 1/steps increments)
         learn_type:   Learning curve type for Challenger ('sigmoid', 'exp', 'lin')
         k_learn:      k_learn parameter for Challenger
@@ -124,18 +124,22 @@ def run_crossover_analysis(
         enable_grid:  If True, iterates over a list of k_learn
         k_learn_list: List of k_learn values for Grid-Search
     """
+    # Normalise reduction to a list so we can iterate over it
+    if isinstance(reduction, int):
+        reduction_list = [reduction]
+    else:
+        reduction_list = list(reduction)
+
     if enable_grid and not k_learn_list:
         k_learn_list = [1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.2]
     elif not enable_grid:
         k_learn_list = [k_learn]
 
-    T_challenger = T - reduction
-
     print("\n" + "=" * 100)
     print(" THETA-BASE CROSSOVER ANALYSIS ".center(100, "="))
     print("=" * 100)
     print(f"  Baseline:   T={T}, learn_type=0 (no App)")
-    print(f"  Challenger: T={T_challenger}, learn_type={learn_type}")
+    print(f"  Challenger: reduction(s)={reduction_list}, learn_type={learn_type}")
     print(f"  Seed={seed}, D_focus={D_focus}, pttr={pttr}")
     if enable_grid:
         print(f"  Grid-Search : Active for k_learn={k_learn_list}")
@@ -233,33 +237,52 @@ def run_crossover_analysis(
         return None
 
     # ----------------------------------------------------------
-    # 3. Build reduced pre_generated_data for T-1 therapists
+    # Containers for all results across reductions
     # ----------------------------------------------------------
-    print(f"\n[3/3] Building reduced model (T={T_challenger} therapists)...")
-    reduced_pre_generated_data, removed_T = build_reduced_pre_generated_data(
-        base_pre_generated_data, n_remove=reduction
-    )
-    print(f"  Removed therapists   : {sorted(removed_T)}")
-    print(f"  Remaining therapists : {reduced_pre_generated_data['T']}")
+    import math
 
-    # ----------------------------------------------------------
-    # ----------------------------------------------------------
-    # 4. Theta Binary Search (Divide and Conquer)
-    # ----------------------------------------------------------
-    # We want to find the lowest theta in [0, 1] where LOS_challenger <= LOS_baseline.
-    step_size = 0.005 # 0.5% steps
-    max_idx = int(1.0 / step_size)
-    precision = step_size
+    all_sweep_results = []
+    all_grid_results = []
 
-    sweep_results = []
-    grid_results = []
+    print(f"\n  Reduction values to analyse: {reduction_list}")
 
-    for current_k in k_learn_list:
-        print(f"\n{'=' * 100}")
-        print(f" THETA BINARY SEARCH FOR k_learn={current_k} (precision: {precision}) ".center(100, "="))
-        print(f"{'=' * 100}")
-        print(f"  {'theta_base':<15} {'LOS_challenger':<20} {'LOS_baseline':<20} {'Better?':<10}")
-        print(f"  {'-'*15} {'-'*20} {'-'*20} {'-'*10}")
+    # ============================================================
+    # Outer loop: iterate over each n_remove value
+    # ============================================================
+    for n_remove in reduction_list:
+        T_challenger = T - n_remove
+
+        print("\n" + "#" * 100)
+        print(f" REDUCTION = {n_remove}  \u2192  T_challenger = {T_challenger} ".center(100, "#"))
+        print("#" * 100)
+
+        # ----------------------------------------------------------
+        # 3. Build reduced pre_generated_data for T-n therapists
+        # ----------------------------------------------------------
+        print(f"\n[3/3] Building reduced model (T={T_challenger} therapists, n_remove={n_remove})...")
+        reduced_pre_generated_data, removed_T = build_reduced_pre_generated_data(
+            base_pre_generated_data, n_remove=n_remove
+        )
+        print(f"  Removed therapists   : {sorted(removed_T)}")
+        print(f"  Remaining therapists : {reduced_pre_generated_data['T']}")
+
+        # ----------------------------------------------------------
+        # 4. Theta Binary Search (Divide and Conquer)
+        # ----------------------------------------------------------
+        # We want to find the lowest theta in [0, 1] where LOS_challenger <= LOS_baseline.
+        step_size = 0.005 # 0.5% steps
+        max_idx = int(1.0 / step_size)
+        precision = step_size
+
+        sweep_results = []
+        grid_results = []
+
+        for current_k in k_learn_list:
+            print(f"\n{'=' * 100}")
+            print(f" THETA BINARY SEARCH FOR n_remove={n_remove}, k_learn={current_k} (precision: {precision}) ".center(100, "="))
+            print(f"{'=' * 100}")
+            print(f"  {'theta_base':<15} {'LOS_challenger':<20} {'LOS_baseline':<20} {'Better?':<10}")
+            print(f"  {'-'*15} {'-'*20} {'-'*20} {'-'*10}")
 
         crossover_theta = None
         left_idx = 0
@@ -278,7 +301,7 @@ def run_crossover_analysis(
             print(f" SOLVE: CHALLENGER STEP {step_nr} ".center(100, "─"))
             print("─" * 100)
             print(f"  Model       : Challenger (with app)")
-            print(f"  Therapists  : T = {T_challenger}  (baseline T={T}, reduction={reduction})")
+            print(f"  Therapists  : T = {T_challenger}  (baseline T={T}, n_remove={n_remove})")
             print(f"  App         : YES  (learn_type = {learn_type})")
             print(f"  theta_base  : {theta:.3f}  (Search range: [{left_theta_bound:.3f}, {right_theta_bound:.3f}])")
             print(f"  k_learn     : {current_k}")
@@ -290,7 +313,7 @@ def run_crossover_analysis(
             print("─" * 100)
 
             # Challenger LP path
-            lp_path_challenger = os.path.join(lp_base_dir, f"challenger_T{T_challenger}_theta{theta:.3f}_k{current_k}")
+            lp_path_challenger = os.path.join(lp_base_dir, f"challenger_T{T_challenger}_rem{n_remove}_theta{theta:.3f}_k{current_k}")
 
             try:
                 challenger_result = solve_instance(
@@ -346,6 +369,7 @@ def run_crossover_analysis(
                 print(f"  {theta:<15.3f} {str(LOS_challenger) if not challenger_result.get('cutoff_exceeded') else '> '+str(LOS_baseline):<20} {str(LOS_baseline):<20} {'YES ✓' if is_better else 'NO ✗':<10}")
 
                 sweep_results.append({
+                    'n_remove': n_remove,
                     'theta_base': theta,
                     'k_learn': current_k,
                     'LOS_baseline': LOS_baseline,
@@ -378,6 +402,7 @@ def run_crossover_analysis(
                 print(f"  ✗ Error at theta={theta:.3f}: {e}")
                 logger.error(f"Challenger theta={theta} failed: {e}", exc_info=True)
                 sweep_results.append({
+                    'n_remove': n_remove,
                     'theta_base': theta,
                     'k_learn': current_k,
                     'LOS_baseline': LOS_baseline,
@@ -415,7 +440,7 @@ def run_crossover_analysis(
             print("─" * 100)
 
             # Baseline App LP path
-            lp_path_baseline_app = os.path.join(lp_base_dir, f"baseline_app_T{T}_theta{crossover_theta:.3f}_k{current_k}")
+            lp_path_baseline_app = os.path.join(lp_base_dir, f"baseline_app_T{T}_rem{n_remove}_theta{crossover_theta:.3f}_k{current_k}")
 
             try:
                 baseline_app_result = solve_instance(
@@ -462,19 +487,22 @@ def run_crossover_analysis(
                 logger.error(f"Baseline + App theta={crossover_theta} failed: {e}", exc_info=True)
 
         grid_results.append({
+            'n_remove': n_remove,
             'k_learn': current_k,
             'crossover_theta': crossover_theta,
             'LOS_baseline_app': LOS_baseline_app
         })
 
-    # ----------------------------------------------------------
-    # 5. Save results
-    # ----------------------------------------------------------
-    import math
+        # Accumulate
+        all_sweep_results.extend(sweep_results)
+        all_grid_results.extend(grid_results)
 
-    print("\n" + "=" * 100)
-    print(" RESULT ".center(100, "="))
-    print("=" * 100)
+        # ----------------------------------------------------------
+        # Per-reduction summary
+        # ----------------------------------------------------------
+        print("\n" + "=" * 100)
+        print(f" RESULT for n_remove={n_remove} (T_challenger={T_challenger}) ".center(100, "="))
+        print("=" * 100)
 
     # Analytical Threshold Prediction
     rho = T_challenger / T
@@ -537,7 +565,7 @@ def run_crossover_analysis(
         k_val = res['k_learn']
         ctheta = res['crossover_theta']
         lba = res['LOS_baseline_app']
-        print(f"\n  [k_learn = {k_val}]")
+        print(f"\n  [n_remove={n_remove}, k_learn = {k_val}]")
         if ctheta is not None:
             print(f"  ✅ Empirical Crossover threshold: theta_base = {ctheta:.3f}")
             print(f"     From this value onwards, T={T_challenger} + App outperforms T={T} without App.")
@@ -553,14 +581,16 @@ def run_crossover_analysis(
     
     print("=" * 100 + "\n")
 
-    # Save
+    # ----------------------------------------------------------
+    # 5. Save all accumulated results
+    # ----------------------------------------------------------
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     # Results go into crossover/results/ (relative to script location)
     script_dir = os.path.dirname(os.path.abspath(__file__))
     out_dir = os.path.join(script_dir, 'results')
     os.makedirs(out_dir, exist_ok=True)
 
-    results_df = pd.DataFrame(sweep_results)
+    results_df = pd.DataFrame(all_sweep_results)
 
     excel_path = os.path.join(out_dir, f"crossover_seed{seed}_{timestamp}.xlsx")
     pickle_path = os.path.join(out_dir, f"crossover_seed{seed}_{timestamp}.pkl")
@@ -574,11 +604,11 @@ def run_crossover_analysis(
     try:
         with open(pickle_path, 'wb') as f:
             pickle.dump({
-                'sweep_results': sweep_results,
-                'grid_results': grid_results,
+                'sweep_results': all_sweep_results,
+                'grid_results': all_grid_results,
                 'LOS_baseline': LOS_baseline,
                 'T': T,
-                'T_challenger': T_challenger,
+                'reduction_list': reduction_list,
                 'seed': seed,
                 'D_focus': D_focus,
                 'pttr': pttr,
@@ -589,9 +619,9 @@ def run_crossover_analysis(
         print(f"  ✗ Pickle error: {e}")
 
     return {
-        'grid_results': grid_results,
+        'grid_results': all_grid_results,
         'LOS_baseline': LOS_baseline,
-        'sweep_results': sweep_results,
+        'sweep_results': all_sweep_results,
     }
 
 
@@ -619,8 +649,8 @@ def main():
                         help='Number of baseline therapists (overrides Excel value)')
 
     # Sweep parameters
-    parser.add_argument('--reduction', type=int, default=1,
-                        help='Number of therapists to remove (default: 1)')
+    parser.add_argument('--reduction', nargs='+', type=int, default=[1, 2],
+                        help='Number(s) of therapists to remove (default: 1, e.g. --reduction 1 2)')
     parser.add_argument('--steps', type=int, default=20,
                         help='Number of theta steps from 0 to 1 (default: 20 → Δ=0.05)')
 
