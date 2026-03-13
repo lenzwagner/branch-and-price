@@ -105,7 +105,8 @@ def run_crossover_analysis(
     infl_point: float,
     lin_increase: float,
     enable_grid: bool = False,
-    k_learn_list: list = None
+    k_learn_list: list = None,
+    step_size: float = 0.005,
 ):
     """
     Executes the crossover analysis.
@@ -269,7 +270,6 @@ def run_crossover_analysis(
         # ----------------------------------------------------------
         # 4. Theta Binary Search (Divide and Conquer)
         # ----------------------------------------------------------
-        step_size = 0.005  # 0.5% steps
         max_idx = int(1.0 / step_size)
         precision = step_size
 
@@ -278,147 +278,223 @@ def run_crossover_analysis(
 
         for current_k in k_learn_list:
             print(f"\n{'=' * 100}")
-            print(f" THETA BINARY SEARCH FOR n_remove={n_remove}, k_learn={current_k} (precision: {precision}) ".center(100, "="))
+            print(f" THETA BINARY SEARCH FOR n_remove={n_remove}, k_learn={current_k} ".center(100, "="))
             print(f"{'=' * 100}")
-            print(f"  {'theta_base':<15} {'LOS_challenger':<20} {'LOS_baseline':<20} {'Better?':<10}")
-            print(f"  {'-'*15} {'-'*20} {'-'*20} {'-'*10}")
+
+            # ----------------------------------------------------------
+            # 4. Preliminary Check at theta = 1.0 (Tactical Optimization)
+            # ----------------------------------------------------------
+            print("\n" + "─" * 100)
+            print(f" TACTICAL CHECK: theta = 1.0 (Maximum Proficiency) ".center(100, "─"))
+            print("─" * 100)
+            
+            theta_max = 1.0
+            lp_path_check = os.path.join(lp_base_dir, f"check_T{T_challenger}_rem{n_remove}_theta1.0_k{current_k}")
+            
+            status = None
+            LOS_theta_1 = None
+            
+            try:
+                check_result = solve_instance(
+                    seed=seed,
+                    D_focus=D_focus,
+                    pttr=pttr,
+                    T=T_challenger,
+                    learn_type=learn_type,
+                    app_data_overrides={
+                        'learn_type': learn_type,
+                        'theta_base': theta_max,
+                        'k_learn': current_k,
+                        'infl_point': infl_point,
+                        'lin_increase': lin_increase,
+                    },
+                    pre_generated_data=reduced_pre_generated_data,
+                    lp_output_path=lp_path_check,
+                    cutoff=LOS_baseline,
+                )
+                
+                if check_result.get('cutoff_exceeded', False):
+                    LOS_theta_1 = None
+                    status = "structural_deficit"
+                    print(f"\n  [!] Tactical Check Result: STRUCTURAL DEFICIT")
+                    print(f"      Even at theta=1.0, LOS is worse than baseline (> {LOS_baseline}). Skipping binary search.")
+                else:
+                    LOS_theta_1 = check_result.get('final_ub')
+                    if LOS_theta_1 is None:
+                        status = "infeasible"
+                        print(f"\n  [!] Tactical Check Result: INFEASIBLE")
+                        print(f"      Even at theta=1.0, no feasible solution was found. Skipping binary search.")
+                    elif LOS_theta_1 <= LOS_baseline:
+                        status = "crossover_possible"
+                        print(f"\n  [✓] Tactical Check Result: CROSSOVER POSSIBLE")
+                        print(f"      At theta=1.0, LOS ({LOS_theta_1}) <= Baseline ({LOS_baseline}). Starting binary search.")
+                    else:
+                        status = "structural_deficit"
+                        print(f"\n  [!] Tactical Check Result: STRUCTURAL DEFICIT")
+                        print(f"      Even at theta=1.0, LOS ({LOS_theta_1}) > Baseline ({LOS_baseline}). Skipping binary search.")
+
+            except Exception as e:
+                print(f"  ✗ Error during tactical check: {e}")
+                status = "error"
 
             crossover_theta = None
-            left_idx = 0
-            right_idx = max_idx
-            step_nr = 0
+            if status == "crossover_possible":
+                left_idx = 0
+                right_idx = max_idx
+                step_nr = 0
 
-            while left_idx <= right_idx:
-                step_nr += 1
-                mid_idx = (left_idx + right_idx) // 2
-                theta = round(mid_idx * step_size, 3)
+                print(f"  {'theta_base':<15} {'LOS_challenger':<20} {'LOS_baseline':<20} {'Better?':<10}")
+                print(f"  {'-'*15} {'-'*20} {'-'*20} {'-'*10}")
 
-                left_theta_bound = round(left_idx * step_size, 3)
-                right_theta_bound = round(right_idx * step_size, 3)
+                while left_idx <= right_idx:
+                    step_nr += 1
+                    mid_idx = (left_idx + right_idx) // 2
+                    theta = round(mid_idx * step_size, 3)
 
-                print("\n" + "\u2500" * 100)
-                print(f" SOLVE: CHALLENGER STEP {step_nr} ".center(100, "\u2500"))
-                print("\u2500" * 100)
-                print(f"  Model       : Challenger (with app)")
-                print(f"  Therapists  : T = {T_challenger}  (baseline T={T}, n_remove={n_remove})")
-                print(f"  App         : YES  (learn_type = {learn_type})")
-                print(f"  theta_base  : {theta:.3f}  (Search range: [{left_theta_bound:.3f}, {right_theta_bound:.3f}])")
-                print(f"  k_learn     : {current_k}")
-                print(f"  infl_point  : {infl_point}")
-                print(f"  lin_increase: {lin_increase}")
-                print(f"  D_focus     : {D_focus}")
-                print(f"  PTTR        : {pttr}")
-                print(f"  LOS_baseline: {LOS_baseline}  (target: LOS_challenger \u2264 {LOS_baseline})")
-                print("\u2500" * 100)
+                    left_theta_bound = round(left_idx * step_size, 3)
+                    right_theta_bound = round(right_idx * step_size, 3)
 
-                lp_path_challenger = os.path.join(
-                    lp_base_dir,
-                    f"challenger_T{T_challenger}_rem{n_remove}_theta{theta:.3f}_k{current_k}"
-                )
+                    print("\n" + "─" * 100)
+                    print(f" SOLVE: CHALLENGER STEP {step_nr} ".center(100, "─"))
+                    print("─" * 100)
+                    print(f"  Model       : Challenger (with app)")
+                    print(f"  Therapists  : T = {T_challenger}  (baseline T={T}, n_remove={n_remove})")
+                    print(f"  App         : YES  (learn_type = {learn_type})")
+                    print(f"  theta_base  : {theta:.3f}  (Search range: [{left_theta_bound:.3f}, {right_theta_bound:.3f}])")
+                    print(f"  k_learn     : {current_k}")
+                    print(f"  infl_point  : {infl_point}")
+                    print(f"  lin_increase: {lin_increase}")
+                    print(f"  D_focus     : {D_focus}")
+                    print(f"  PTTR        : {pttr}")
+                    print(f"  LOS_baseline: {LOS_baseline}  (target: LOS_challenger ≤ {LOS_baseline})")
+                    print("─" * 100)
 
-                try:
-                    challenger_result = solve_instance(
-                        seed=seed,
-                        D_focus=D_focus,
-                        pttr=pttr,
-                        T=T_challenger,
-                        learn_type=learn_type,
-                        app_data_overrides={
-                            'learn_type': learn_type,
-                            'theta_base': theta,
-                            'k_learn': current_k,
-                            'infl_point': infl_point,
-                            'lin_increase': lin_increase,
-                        },
-                        pre_generated_data=reduced_pre_generated_data,
-                        lp_output_path=lp_path_challenger,
-                        cutoff=LOS_baseline,
+                    lp_path_challenger = os.path.join(
+                        lp_base_dir,
+                        f"challenger_T{T_challenger}_rem{n_remove}_theta{theta:.3f}_k{current_k}"
                     )
 
-                    if challenger_result.get('cutoff_exceeded', False):
-                        LOS_challenger = None
-                        is_better = False
-                        print(f"\n  Result:")
-                        print(f"    LOS_challenger  : Cutoff (>{LOS_baseline})")
-                        print(f"    LOS_baseline    : {LOS_baseline}")
-                        print(f"    Better?         : NO \u2717 (Early Cutoff)")
-                    else:
-                        LOS_challenger = challenger_result.get('final_ub')
-                        c_P_F    = challenger_result.get('P_F', [])
-                        c_P_Post = challenger_result.get('P_Post', [])
-                        c_P_Pre  = challenger_result.get('P_Pre', [])
-                        c_pre_x  = challenger_result.get('pre_x', {})
-                        is_better = (LOS_challenger is not None) and (LOS_challenger <= LOS_baseline)
+                    try:
+                        challenger_result = solve_instance(
+                            seed=seed,
+                            D_focus=D_focus,
+                            pttr=pttr,
+                            T=T_challenger,
+                            learn_type=learn_type,
+                            app_data_overrides={
+                                'learn_type': learn_type,
+                                'theta_base': theta,
+                                'k_learn': current_k,
+                                'infl_point': infl_point,
+                                'lin_increase': lin_increase,
+                            },
+                            pre_generated_data=reduced_pre_generated_data,
+                            lp_output_path=lp_path_challenger,
+                            cutoff=LOS_baseline,
+                        )
 
-                        c_pre_x_filtered = {
-                            p: {td: v for td, v in p_dict.items() if td[1] >= 1}
-                            for p, p_dict in c_pre_x.items()
-                            if any(td[1] >= 1 for td in p_dict.keys())
-                        }
+                        if challenger_result.get('cutoff_exceeded', False):
+                            LOS_challenger = None
+                            is_better = False
+                            print(f"\n  Result:")
+                            print(f"    LOS_challenger  : Cutoff (>{LOS_baseline})")
+                            print(f"    LOS_baseline    : {LOS_baseline}")
+                            print(f"    Better?         : NO ✗ (Early Cutoff)")
+                        else:
+                            LOS_challenger = challenger_result.get('final_ub')
+                            c_P_F    = challenger_result.get('P_F', [])
+                            c_P_Post = challenger_result.get('P_Post', [])
+                            c_P_Pre  = challenger_result.get('P_Pre', [])
+                            c_pre_x  = challenger_result.get('pre_x', {})
+                            is_better = (LOS_challenger is not None) and (LOS_challenger <= LOS_baseline)
 
-                        print(f"\n  Result:")
-                        print(f"    LOS_challenger  : {LOS_challenger}")
-                        print(f"    LOS_baseline    : {LOS_baseline}")
-                        print(f"    Better?         : {'YES \u2713' if is_better else 'NO \u2717'}")
-                        print(f"    Pre   patients  ({len(c_P_Pre):>3}): {sorted(c_P_Pre)}")
-                        print(f"    Focus patients  ({len(c_P_F):>3}): {sorted(c_P_F)}")
-                        print(f"    Post  patients  ({len(c_P_Post):>3}): {sorted(c_P_Post)}")
-                        print(f"    pre_x (d >= 1)  : {c_pre_x_filtered}")
+                            c_pre_x_filtered = {
+                                p: {td: v for td, v in p_dict.items() if td[1] >= 1}
+                                for p, p_dict in c_pre_x.items()
+                                if any(td[1] >= 1 for td in p_dict.keys())
+                            }
 
-                    print(f"\n  {'theta_base':<15} {'LOS_challenger':<20} {'LOS_baseline':<20} {'Better?':<10}")
-                    print(f"  {theta:<15.3f} {str(LOS_challenger) if not challenger_result.get('cutoff_exceeded') else '> '+str(LOS_baseline):<20} {str(LOS_baseline):<20} {'YES \u2713' if is_better else 'NO \u2717':<10}")
+                            print(f"\n  Result:")
+                            print(f"    LOS_challenger  : {LOS_challenger}")
+                            print(f"    LOS_baseline    : {LOS_baseline}")
+                            print(f"    Better?         : {'YES ✓' if is_better else 'NO ✗'}")
+                            print(f"    Pre   patients  ({len(c_P_Pre):>3}): {sorted(c_P_Pre)}")
+                            print(f"    Focus patients  ({len(c_P_F):>3}): {sorted(c_P_F)}")
+                            print(f"    Post  patients  ({len(c_P_Post):>3}): {sorted(c_P_Post)}")
+                            print(f"    pre_x (d >= 1)  : {c_pre_x_filtered}")
 
-                    sweep_results.append({
-                        'n_remove': n_remove,
-                        'theta_base': theta,
-                        'k_learn': current_k,
-                        'LOS_baseline': LOS_baseline,
-                        'LOS_challenger': LOS_challenger,
-                        'cutoff_exceeded': challenger_result.get('cutoff_exceeded', False),
-                        'is_better': is_better,
-                        'T_baseline': T,
-                        'T_challenger': T_challenger,
-                        'learn_type': learn_type,
-                        'seed': seed,
-                        'D_focus': D_focus,
-                        'pttr': pttr,
-                        'is_optimal_challenger': challenger_result.get('is_optimal'),
-                        'total_time_challenger': challenger_result.get('total_time'),
-                        'is_optimal_baseline': baseline_result.get('is_optimal'),
-                        'total_time_baseline': baseline_result.get('total_time'),
-                    })
+                        print(f"\n  {'theta_base':<15} {'LOS_challenger':<20} {'LOS_baseline':<20} {'Better?':<10}")
+                        print(f"  {theta:<15.3f} {str(LOS_challenger) if not challenger_result.get('cutoff_exceeded') else '> '+str(LOS_baseline):<20} {str(LOS_baseline):<20} {'YES ✓' if is_better else 'NO ✗':<10}")
 
-                    if is_better:
-                        crossover_theta = theta
-                        right_idx = mid_idx - 1
-                        new_right_bound = round(right_idx * step_size, 3)
-                        print(f"  \U0001f3af App is better! Crossover is <= {theta:.3f}. Narrowing search to [{left_theta_bound:.3f}, {new_right_bound:.3f}].")
-                    else:
+                        sweep_results.append({
+                            'n_remove': n_remove,
+                            'theta_base': theta,
+                            'k_learn': current_k,
+                            'LOS_baseline': LOS_baseline,
+                            'LOS_challenger': LOS_challenger,
+                            'cutoff_exceeded': challenger_result.get('cutoff_exceeded', False),
+                            'is_better': is_better,
+                            'status': 'search_step',
+                            'T_baseline': T,
+                            'T_challenger': T_challenger,
+                            'learn_type': learn_type,
+                            'seed': seed,
+                            'D_focus': D_focus,
+                            'pttr': pttr,
+                            'is_optimal_challenger': challenger_result.get('is_optimal'),
+                            'total_time_challenger': challenger_result.get('total_time'),
+                            'is_optimal_baseline': baseline_result.get('is_optimal'),
+                            'total_time_baseline': baseline_result.get('total_time'),
+                        })
+
+                        if is_better:
+                            crossover_theta = theta
+                            right_idx = mid_idx - 1
+                            new_right_bound = round(right_idx * step_size, 3)
+                            print(f"  🎯 App is better! Crossover is <= {theta:.3f}. Narrowing search to [{left_theta_bound:.3f}, {new_right_bound:.3f}].")
+                        else:
+                            left_idx = mid_idx + 1
+                            new_left_bound = round(left_idx * step_size, 3)
+                            print(f"  ✗ App is worse. Crossover is > {theta:.3f}. Narrowing search to [{new_left_bound:.3f}, {right_theta_bound:.3f}].")
+
+                    except Exception as e:
+                        print(f"  ✗ Error at theta={theta:.3f}: {e}")
+                        logger.error(f"Challenger theta={theta} failed: {e}", exc_info=True)
+                        sweep_results.append({
+                            'n_remove': n_remove,
+                            'theta_base': theta,
+                            'k_learn': current_k,
+                            'LOS_baseline': LOS_baseline,
+                            'LOS_challenger': None,
+                            'is_better': False,
+                            'status': 'error',
+                            'T_baseline': T,
+                            'T_challenger': T_challenger,
+                            'learn_type': learn_type,
+                            'seed': seed,
+                            'D_focus': D_focus,
+                            'pttr': pttr,
+                            'error': str(e),
+                        })
                         left_idx = mid_idx + 1
                         new_left_bound = round(left_idx * step_size, 3)
-                        print(f"  \u2717 App is worse. Crossover is > {theta:.3f}. Narrowing search to [{new_left_bound:.3f}, {right_theta_bound:.3f}].")
-
-                except Exception as e:
-                    print(f"  \u2717 Error at theta={theta:.3f}: {e}")
-                    logger.error(f"Challenger theta={theta} failed: {e}", exc_info=True)
-                    sweep_results.append({
-                        'n_remove': n_remove,
-                        'theta_base': theta,
-                        'k_learn': current_k,
-                        'LOS_baseline': LOS_baseline,
-                        'LOS_challenger': None,
-                        'is_better': False,
-                        'T_baseline': T,
-                        'T_challenger': T_challenger,
-                        'learn_type': learn_type,
-                        'seed': seed,
-                        'D_focus': D_focus,
-                        'pttr': pttr,
-                        'error': str(e),
-                    })
-                    left_idx = mid_idx + 1
-                    new_left_bound = round(left_idx * step_size, 3)
-                    print(f"  \u26a0\ufe0f Error encountered, assuming we need higher theta. Narrowing search to [{new_left_bound:.3f}, {right_theta_bound:.3f}].")
+                        print(f"  ⚠️ Error encountered, assuming we need higher theta. Narrowing search to [{new_left_bound:.3f}, {right_theta_bound:.3f}].")
+            else:
+                sweep_results.append({
+                    'n_remove': n_remove,
+                    'theta_base': 1.0,
+                    'k_learn': current_k,
+                    'LOS_baseline': LOS_baseline,
+                    'LOS_challenger': LOS_theta_1,
+                    'is_better': False,
+                    'status': status,
+                    'T_baseline': T,
+                    'T_challenger': T_challenger,
+                    'learn_type': learn_type,
+                    'seed': seed,
+                    'D_focus': D_focus,
+                    'pttr': pttr,
+                })
 
             # ----------------------------------------------------------
             # 4b. Solve Baseline + App (T therapists, with crossover theta)
@@ -639,11 +715,12 @@ def main():
     parser.add_argument('--T', type=int, default=None,
                         help='Number of baseline therapists (overrides Excel value)')
 
-    # Sweep parameters
     parser.add_argument('--reduction', nargs='+', type=int, default=[1,2],
                         help='Number(s) of therapists to remove (default: 1, e.g. --reduction 1 2)')
     parser.add_argument('--steps', type=int, default=20,
-                        help='Number of theta steps from 0 to 1 (default: 20 → Δ=0.05)')
+                        help='Number of theta steps from 0 to 1 (DEPRECATED, use --step_size)')
+    parser.add_argument('--step_size', type=float, default=0.005,
+                        help='Precision of the binary search (default: 0.005)')
 
     # Challenger learning curve
     parser.add_argument('--learn_type', type=str, default='sigmoid',
@@ -740,6 +817,7 @@ def main():
         lin_increase=args.lin_increase,
         enable_grid=args.grid,
         k_learn_list=args.k_learn_list,
+        step_size=args.step_size,
     )
 
 
