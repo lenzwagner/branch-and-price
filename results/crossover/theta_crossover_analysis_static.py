@@ -695,6 +695,58 @@ def run_crossover_analysis(
     except Exception as e:
         print(f"  ✗ Pickle error: {e}")
 
+    # ----------------------------------------------------------
+    # Final Summary across all reductions
+    # ----------------------------------------------------------
+    print("\n" + "=" * 100)
+    print(" FINAL SUMMARY ".center(100, "="))
+    print("=" * 100)
+    print(f"  Seed        : {seed}  |  D_focus : {D_focus}  |  PTTR : {pttr}")
+    print(f"  Baseline    : T = {T}, no app  →  LOS = {LOS_baseline}")
+    print(f"  Reductions  : {reduction_list}")
+    print("-" * 100)
+    print(f"  {'n_remove':<10} {'T_chal':<8} {'Crossover θ':<15} {'LOS_chal@θ':<17} {'LOS_base':<15} {'Improvement':<12} {'Status'}")
+    print(f"  {'-'*10} {'-'*8} {'-'*15} {'-'*17} {'-'*15} {'-'*12} {'-'*20}")
+
+    for res in all_grid_results:
+        n_rem   = res['n_remove']
+        t_chal  = T - n_rem
+        ctheta  = res['crossover_theta']
+        lba     = res['LOS_baseline_app']
+
+        # Find the best (lowest) LOS_challenger achieved at the crossover theta
+        matching = [
+            r['LOS_challenger'] for r in all_sweep_results
+            if r['n_remove'] == n_rem and r.get('is_better') and r['LOS_challenger'] is not None
+        ]
+        los_at_theta = min(matching) if matching else lba
+
+        if ctheta is not None:
+            imp_str = ""
+            if los_at_theta is not None and LOS_baseline is not None and LOS_baseline > 0:
+                imp = (LOS_baseline - los_at_theta) / LOS_baseline * 100
+                imp_str = f"{imp:+.2f}%"
+            los_str = f"{los_at_theta}" if los_at_theta is not None else "–"
+            status_str = "✅ Crossover found"
+        else:
+            los_str = "–"
+            imp_str = "–"
+            # Determine reason from sweep results for this n_remove
+            statuses = [r.get('status') for r in all_sweep_results if r['n_remove'] == n_rem]
+            if 'structural_deficit' in statuses:
+                status_str = "❌ Structural deficit (θ=1 insufficient)"
+            elif 'infeasible' in statuses:
+                status_str = "❌ Infeasible at θ=1"
+            else:
+                status_str = "❌ No crossover in [0.0, 1.0]"
+
+        theta_str = f"{ctheta:.3f}" if ctheta is not None else "–"
+        print(f"  {n_rem:<10} {t_chal:<8} {theta_str:<15} {los_str:<17} {str(LOS_baseline):<15} {imp_str:<12} {status_str}")
+
+    print("=" * 100)
+    print(f"  Results saved to: {out_dir}")
+    print("=" * 100 + "\n")
+
     return {
         'grid_results': all_grid_results,
         'LOS_baseline': LOS_baseline,

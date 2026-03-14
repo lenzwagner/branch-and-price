@@ -117,7 +117,7 @@ class ColumnGeneration:
         }
 
         # Generate patient and therapist data OR use pre-generated data
-        if self.pre_generated_data:
+        if self.pre_generated_data is not None:
             if self.verbose:
                 print("\n[Setup] Using PRE-GENERATED patient data...")
             self.Req = self.pre_generated_data['Req']
