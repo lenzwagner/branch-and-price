@@ -107,6 +107,7 @@ def run_crossover_analysis(
     enable_grid: bool = False,
     k_learn_list: list = None,
     step_size: float = 0.005,
+    save_results: bool = True,
 ):
     """
     Executes the crossover analysis.
@@ -649,41 +650,39 @@ def run_crossover_analysis(
 
         print("=" * 100 + "\n")
 
-    # ----------------------------------------------------------
-    # 5. Save all accumulated results
-    # ----------------------------------------------------------
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    out_dir = os.path.join(script_dir, 'results')
-    os.makedirs(out_dir, exist_ok=True)
+    if save_results:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        out_dir = os.path.join(script_dir, 'results')
+        os.makedirs(out_dir, exist_ok=True)
 
-    results_df = pd.DataFrame(all_sweep_results)
+        results_df = pd.DataFrame(all_sweep_results)
 
-    excel_path  = os.path.join(out_dir, f"crossover_seed{seed}_{timestamp}.xlsx")
-    pickle_path = os.path.join(out_dir, f"crossover_seed{seed}_{timestamp}.pkl")
+        excel_path = os.path.join(out_dir, f"crossover_seed{seed}_{timestamp}.xlsx")
+        pickle_path = os.path.join(out_dir, f"crossover_seed{seed}_{timestamp}.pkl")
 
-    try:
-        results_df.to_excel(excel_path, index=False)
-        print(f"  \u2713 Excel saved: {excel_path}")
-    except Exception as e:
-        print(f"  \u2717 Excel error: {e}")
+        try:
+            results_df.to_excel(excel_path, index=False)
+            print(f"  \u2713 Excel saved: {excel_path}")
+        except Exception as e:
+            print(f"  \u2717 Excel error: {e}")
 
-    try:
-        with open(pickle_path, 'wb') as f:
-            pickle.dump({
-                'sweep_results':  all_sweep_results,
-                'grid_results':   all_grid_results,
-                'LOS_baseline':   LOS_baseline,
-                'T':              T,
-                'reduction_list': reduction_list,
-                'seed':           seed,
-                'D_focus':        D_focus,
-                'pttr':           pttr,
-                'learn_type':     learn_type,
-            }, f)
-        print(f"  \u2713 Pickle saved: {pickle_path}")
-    except Exception as e:
-        print(f"  \u2717 Pickle error: {e}")
+        try:
+            with open(pickle_path, 'wb') as f:
+                pickle.dump({
+                    'sweep_results': all_sweep_results,
+                    'grid_results': all_grid_results,
+                    'LOS_baseline': LOS_baseline,
+                    'T': T,
+                    'reduction_list': reduction_list,
+                    'seed': seed,
+                    'D_focus': D_focus,
+                    'pttr': pttr,
+                    'learn_type': learn_type,
+                }, f)
+            print(f"  \u2713 Pickle saved: {pickle_path}")
+        except Exception as e:
+            print(f"  \u2717 Pickle error: {e}")
 
     return {
         'grid_results':  all_grid_results,
@@ -719,7 +718,7 @@ def main():
                         help='Number(s) of therapists to remove (default: 1, e.g. --reduction 1 2)')
     parser.add_argument('--steps', type=int, default=20,
                         help='Number of theta steps from 0 to 1 (DEPRECATED, use --step_size)')
-    parser.add_argument('--step_size', type=float, default=0.005,
+    parser.add_argument('--step_size', type=float, default=0.05,
                         help='Precision of the binary search (default: 0.005)')
 
     # Challenger learning curve
@@ -755,8 +754,11 @@ def main():
     T = args.T
 
     # Paths are always relative to the project root (parent of the crossover/ folder)
-    script_dir   = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(script_dir)   # bnp-hybrid-scheduling/
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(script_dir)  # bnp-hybrid-scheduling/
+
+    # 1. Load Scenarios from Excel if parameters are missing
+    scenarios_to_run = []
 
     if any(v is None for v in [seed, D_focus, pttr, T]):
         instances_dir = os.path.join(script_dir, 'instances')
@@ -776,49 +778,102 @@ def main():
         if scenarios_df.empty:
             raise ValueError("Excel file is empty.")
 
-        # Use first row
-        row = scenarios_df.iloc[0]
-
-        if seed is None:
-            seed = int(row.get('seed', 42))
-        if D_focus is None:
-            D_focus = int(row.get('D_focus', row.get('D_focus_count', 14)))
-        if pttr is None:
-            pttr = str(row.get('pttr', 'medium'))
-        if T is None:
-            if 'T_count' in row:
-                T = int(row['T_count'])
+        # If a seed was provided but other params missing, try to find that seed in Excel
+        if args.seed is not None:
+            scenarios_df = scenarios_df[scenarios_df['seed'] == args.seed]
+            if scenarios_df.empty:
+                print(f"Warning: Seed {args.seed} not found in {newest_excel}. Using CLI values only.")
+                scenarios_to_run.append({
+                    'seed': seed,
+                    'D_focus': D_focus or 14,
+                    'pttr': pttr or 'medium',
+                    'T': T or 10
+                })
             else:
-                T_val = row.get('T', 10)
-                try:
-                    T = int(T_val)
-                except ValueError:
-                    import ast
-                    T = len(ast.literal_eval(T_val))
-
-        print(f"  Parameters read: seed={seed}, D_focus={D_focus}, pttr={pttr}, T={T}")
+                for _, row in scenarios_df.iterrows():
+                    scenarios_to_run.append({
+                        'seed': int(row.get('seed', 42)),
+                        'D_focus': int(row.get('D_focus', row.get('D_focus_count', 14))),
+                        'pttr': str(row.get('pttr', 'medium')),
+                        'T': int(row.get('T_count', row.get('T', 10)))
+                    })
+        else:
+            # Loop over all rows in Excel
+            for _, row in scenarios_df.iterrows():
+                scenarios_to_run.append({
+                    'seed': int(row.get('seed', 42)),
+                    'D_focus': int(row.get('D_focus', row.get('D_focus_count', 14))),
+                    'pttr': str(row.get('pttr', 'medium')),
+                    'T': int(row.get('T_count', row.get('T', 10)))
+                })
+    else:
+        # All params provided via CLI
+        scenarios_to_run.append({
+            'seed': seed,
+            'D_focus': D_focus,
+            'pttr': pttr,
+            'T': T
+        })
 
     # ----------------------------------------------------------
-    # Run analysis
+    # Run analysis for each scenario
     # ----------------------------------------------------------
     # Change to project root so all internal imports and relative paths work
     os.chdir(project_root)
 
-    run_crossover_analysis(
-        seed=seed,
-        D_focus=D_focus,
-        pttr=pttr,
-        T=T,
-        reduction=args.reduction,
-        steps=args.steps,
-        learn_type=args.learn_type,
-        k_learn=args.k_learn,
-        infl_point=args.infl_point,
-        lin_increase=args.lin_increase,
-        enable_grid=args.grid,
-        k_learn_list=args.k_learn_list,
-        step_size=args.step_size,
-    )
+    print(f"\nStarting analysis for {len(scenarios_to_run)} scenarios...")
+
+    all_combined_sweep = []
+    all_combined_grid = []
+
+    for i, s in enumerate(scenarios_to_run):
+        print(f"\n" + "###" * 33)
+        print(f" SCENARIO {i+1}/{len(scenarios_to_run)}: Seed={s['seed']}, D_focus={s['D_focus']}, PTTR={s['pttr']}, T={s['T']} ".center(100, "#"))
+        print("###" * 33 + "\n")
+
+        res_data = run_crossover_analysis(
+            seed=s['seed'],
+            D_focus=s['D_focus'],
+            pttr=s['pttr'],
+            T=s['T'],
+            reduction=args.reduction,
+            steps=args.steps,
+            learn_type=args.learn_type,
+            k_learn=args.k_learn,
+            infl_point=args.infl_point,
+            lin_increase=args.lin_increase,
+            enable_grid=args.grid,
+            k_learn_list=args.k_learn_list,
+            step_size=args.step_size,
+            save_results=False, # Don't save individual files
+        )
+
+        if res_data:
+            all_combined_sweep.extend(res_data.get('sweep_results', []))
+            all_combined_grid.extend(res_data.get('grid_results', []))
+
+    # ----------------------------------------------------------
+    # Save aggregated results globally
+    # ----------------------------------------------------------
+    if all_combined_sweep:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_dir = os.path.join(script_dir, 'results')
+        os.makedirs(out_dir, exist_ok=True)
+
+        global_excel_path = os.path.join(out_dir, f"crossover_GLOBAL_{timestamp}.xlsx")
+        global_pickle_path = os.path.join(out_dir, f"crossover_GLOBAL_{timestamp}.pkl")
+
+        pd.DataFrame(all_combined_sweep).to_excel(global_excel_path, index=False)
+        print(f"\n✓ Global Excel saved: {global_excel_path}")
+
+        with open(global_pickle_path, 'wb') as f:
+            pickle.dump({
+                'sweep_results': all_combined_sweep,
+                'grid_results': all_combined_grid,
+                'timestamp': timestamp,
+                'scenarios_count': len(scenarios_to_run)
+            }, f)
+        print(f"✓ Global Pickle saved: {global_pickle_path}")
 
 
 if __name__ == "__main__":
