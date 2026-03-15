@@ -691,6 +691,7 @@ def run_crossover_analysis(
                     'learn_type': learn_type,
                 }, f)
             print(f"  ✓ Pickle saved: {pickle_path}")
+            print(f"  ✓ Results saved to: {out_dir}")
         except Exception as e:
             print(f"  ✗ Pickle error: {e}")
 
@@ -743,7 +744,8 @@ def run_crossover_analysis(
         print(f"  {n_rem:<10} {t_chal:<8} {theta_str:<15} {los_str:<17} {str(LOS_baseline):<15} {imp_str:<12} {status_str}")
 
     print("=" * 100)
-    print(f"  Results saved to: {out_dir}")
+    if save_results:
+        print(f"  ✓ Results saved to: {out_dir}")
     print("=" * 100 + "\n")
 
     return {
